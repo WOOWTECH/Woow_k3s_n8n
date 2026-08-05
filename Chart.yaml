@@ -1,0 +1,22 @@
+apiVersion: v2
+name: n8n
+description: >-
+  n8n workflow automation on K3s/Kubernetes, with an optional n8n-MCP
+  sidecar deployment for AI-agent workflow management.
+type: application
+version: 1.0.0
+appVersion: "latest"
+kubeVersion: ">=1.24.0-0"
+keywords:
+  - n8n
+  - workflow
+  - automation
+  - mcp
+home: https://github.com/WOOWTECH/Woow_k3s_n8n
+sources:
+  - https://github.com/WOOWTECH/Woow_k3s_n8n
+  - https://github.com/n8n-io/n8n
+  - https://github.com/czlonkowski/n8n-mcp
+maintainers:
+  - name: WoowTech
+    url: https://github.com/WOOWTECH

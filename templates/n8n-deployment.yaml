@@ -3,7 +3,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: n8n
-  namespace: n8n
+  namespace: {{ .Values.namespace.name }}
   labels:
     app: n8n
     component: n8n
@@ -23,7 +23,8 @@ spec:
     spec:
       containers:
         - name: n8n
-          image: n8nio/n8n:latest
+          image: "{{ .Values.n8n.image.repository }}:{{ .Values.n8n.image.tag }}"
+          imagePullPolicy: {{ .Values.n8n.image.pullPolicy }}
           ports:
             - name: http
               containerPort: 5678
@@ -60,12 +61,7 @@ spec:
             failureThreshold: 30    # up to ~160 s for first start
           # ── Resources ────────────────────────────────────────────
           resources:
-            requests:
-              cpu: 250m
-              memory: 256Mi
-            limits:
-              cpu: "1"
-              memory: 1Gi
+            {{- toYaml .Values.n8n.resources | nindent 12 }}
           # ── Volume mounts ────────────────────────────────────────
           volumeMounts:
             - name: n8n-data

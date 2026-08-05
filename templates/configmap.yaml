@@ -3,19 +3,15 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: n8n-config
-  namespace: n8n
+  namespace: {{ .Values.namespace.name }}
   labels:
     app: n8n
 data:
   # ── n8n configuration ─────────────────────────────────────────────
-  N8N_BASIC_AUTH_ACTIVE: "true"
-  N8N_BASIC_AUTH_USER: "admin"
-  N8N_HOST: "localhost"
-  N8N_PORT: "5678"
-  N8N_PROTOCOL: "http"
-  WEBHOOK_URL: "http://localhost:5678/"
-
+{{- range $key, $value := .Values.n8n.config }}
+  {{ $key }}: {{ $value | quote }}
+{{- end }}
   # ── n8n-mcp configuration ─────────────────────────────────────────
-  N8N_MODE: "true"
-  MCP_MODE: "http"
-  N8N_API_URL: "http://n8n:5678"
+{{- range $key, $value := .Values.mcp.config }}
+  {{ $key }}: {{ $value | quote }}
+{{- end }}

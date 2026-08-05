@@ -1,9 +1,10 @@
+{{- if .Values.mcp.enabled }}
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: n8n-mcp
-  namespace: n8n
+  namespace: {{ .Values.namespace.name }}
   labels:
     app: n8n
     component: n8n-mcp
@@ -24,7 +25,7 @@ spec:
       # ── Wait for n8n to become ready before starting ─────────────
       initContainers:
         - name: wait-for-n8n
-          image: busybox:1.36
+          image: {{ .Values.mcp.initContainer.image }}
           command:
             - sh
             - -c
@@ -37,7 +38,8 @@ spec:
               echo "n8n is up -- starting n8n-mcp"
       containers:
         - name: n8n-mcp
-          image: ghcr.io/czlonkowski/n8n-mcp:latest
+          image: "{{ .Values.mcp.image.repository }}:{{ .Values.mcp.image.tag }}"
+          imagePullPolicy: {{ .Values.mcp.image.pullPolicy }}
           ports:
             - name: http
               containerPort: 3000
@@ -92,12 +94,7 @@ spec:
             failureThreshold: 5
           # ── Resources ────────────────────────────────────────────
           resources:
-            requests:
-              cpu: 100m
-              memory: 128Mi
-            limits:
-              cpu: 500m
-              memory: 512Mi
+            {{- toYaml .Values.mcp.resources | nindent 12 }}
           # ── Volume mounts ────────────────────────────────────────
           volumeMounts:
             - name: mcp-logs
@@ -106,3 +103,4 @@ spec:
         - name: mcp-logs
           persistentVolumeClaim:
             claimName: mcp-logs
+{{- end }}

@@ -1,0 +1,96 @@
+# Default values for the n8n chart.
+# Defaults reproduce the original Kustomize deployment 1:1
+# (namespace n8n, NodePorts 30678/30300, local-path storage, SQLite).
+
+namespace:
+  # Create the target namespace as part of the release.
+  # Set to false if the namespace is managed elsewhere.
+  create: true
+  name: n8n
+
+n8n:
+  image:
+    repository: n8nio/n8n
+    tag: latest
+    # "Always" matches the original manifests' behaviour with the
+    # :latest tag (Kubernetes defaults to Always for :latest).
+    pullPolicy: Always
+
+  # Exposed to the container via a ConfigMap (envFrom).
+  config:
+    N8N_BASIC_AUTH_ACTIVE: "true"
+    N8N_BASIC_AUTH_USER: "admin"
+    N8N_HOST: "localhost"
+    N8N_PORT: "5678"
+    N8N_PROTOCOL: "http"
+    WEBHOOK_URL: "http://localhost:5678/"
+
+  service:
+    type: NodePort
+    port: 5678
+    # Only used when type is NodePort.
+    nodePort: 30678
+
+  persistence:
+    # PVC for n8n workflow data, credentials, and SQLite database.
+    storageClassName: local-path
+    size: 5Gi
+
+  resources:
+    requests:
+      cpu: 250m
+      memory: 256Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+
+mcp:
+  # Deploy the n8n-MCP sidecar (AI-agent workflow management).
+  enabled: true
+
+  image:
+    repository: ghcr.io/czlonkowski/n8n-mcp
+    tag: latest
+    # "Always" matches the original manifests' behaviour with the
+    # :latest tag (Kubernetes defaults to Always for :latest).
+    pullPolicy: Always
+
+  # Exposed to the container via the shared ConfigMap.
+  config:
+    N8N_MODE: "true"
+    MCP_MODE: "http"
+    N8N_API_URL: "http://n8n:5678"
+
+  initContainer:
+    image: busybox:1.36
+
+  service:
+    type: NodePort
+    port: 3000
+    # Only used when type is NodePort.
+    nodePort: 30300
+
+  persistence:
+    # PVC for n8n-mcp server logs.
+    storageClassName: local-path
+    size: 1Gi
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+secrets:
+  # -- n8n basic auth password (change before deploying)
+  basicAuthPassword: "changeme-n8n-password"
+  # -- n8n encryption key for credentials stored in the database
+  #    Generate with: openssl rand -hex 32
+  encryptionKey: "changeme-generate-with-openssl-rand-hex-32"
+  # -- n8n REST API key used by n8n-mcp to communicate with n8n
+  #    Generate in n8n UI: Settings > API > Create API Key
+  n8nApiKey: "changeme-n8n-api-key"
+  # -- Bearer token that protects the n8n-mcp HTTP endpoint
+  mcpAuthToken: "changeme-mcp-auth-token"
