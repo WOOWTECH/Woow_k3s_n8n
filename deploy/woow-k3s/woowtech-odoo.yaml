@@ -46,6 +46,14 @@ labels:
 strategy:
   type: RollingUpdate
 
+# Pod-template annotations. `kubectl rollout restart` stamps restartedAt into
+# the STORED pod template, so it is part of the live pod-template hash and must
+# be reproduced verbatim - otherwise a `--take-ownership` upgrade would strip it
+# and roll the Deployment. Value as of the last check against the live object;
+# refresh it (scripts/check-drift.sh) after any future `kubectl rollout restart`.
+podAnnotations:
+  kubectl.kubernetes.io/restartedAt: "2026-06-23T20:52:32+08:00"
+
 port: 5678
 
 # EXACT env order of the live Deployment - order is load-bearing (see

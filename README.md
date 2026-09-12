@@ -114,7 +114,7 @@ identically to the current live objects, so nothing restarts.
 | `strategy.type` | `RollingUpdate` | Or `Recreate` |
 | `nodeSelector` / `podSecurityContext` / `containerSecurityContext` | `{}` | Raw pass-through maps |
 | `probes.liveness` / `.readiness` / `.startup` | `{}` (disabled) | Raw k8s probe objects |
-| `podAnnotations` | `{}` | Pod-template `metadata.annotations` (chart-managed only; see "Migrating" below) |
+| `podAnnotations` | `{}` | Pod-template `metadata.annotations`; each live instance sets its `kubectl.kubernetes.io/restartedAt` here (see "Migrating" below) |
 | `env` | basic-auth + timezone/host/port/protocol/webhook/... | Full, exactly-ordered container env list |
 | `persistence.storageClassName` | `longhorn-delete` (test default) | `longhorn` on woow-k3s instances |
 | `tests.enabled` | `true` | `helm test` smoke pod |
@@ -150,18 +150,27 @@ matching instance values, this chart is field-for-field equivalent to the
 running Deployment/Service/PVC. The only intentional differences:
 
 1. The PVC gains `helm.sh/resource-policy: keep` (it had no keep policy under
-   plain `kubectl apply`).
-2. Helm's own release-tracking annotations/labels are added on adoption.
-3. The container env list is generated in a fixed order (secret-backed vars
-   first, then `extraEnv`); n8n does not care about env order.
-4. Neither live Deployment's `spec.template.metadata.annotations` (both
-   currently carry a `kubectl.kubernetes.io/restartedAt` timestamp left over
-   from a manual `kubectl rollout restart`) is reproduced by default. It is
-   transient operator metadata, not part of the desired pod spec, and
-   Kubernetes/Helm merge annotation maps on apply rather than replacing them
-   - so a take-over upgrade leaves it in place either way and never restarts
-   the pod over it. Use `podAnnotations` if an instance needs the chart to
-   actually manage a pod-template annotation.
+   plain `kubectl apply`). PVC metadata only - it does not touch the pod
+   template, so adoption still restarts nothing.
+2. Helm's own release-tracking metadata is added on adoption:
+   `meta.helm.sh/release-name` / `-namespace` annotations, plus
+   `app.kubernetes.io/managed-by: Helm` - which replaces the
+   `app.kubernetes.io/managed-by: kubectl` label the `cindytech` objects
+   carry today. Object metadata only; the selector and the pod template
+   are untouched, so nothing rolls.
+
+Nothing else differs. In particular the pod template is reproduced verbatim,
+including two details that are easy to miss:
+
+- **Env order.** `env` in each instance file lists the live container's
+  variables in their live order. Kubernetes hashes the pod template as
+  written, so re-ordering the list alone would recreate the ReplicaSet.
+- **`kubectl.kubernetes.io/restartedAt`.** `kubectl rollout restart` stamps
+  this annotation into the *stored* pod template, so it is part of the live
+  pod-template hash. Each instance file carries the exact timestamp its
+  Deployment currently has, under `podAnnotations`. After anyone runs
+  `kubectl rollout restart` again, copy the new timestamp back into that file
+  - `scripts/check-drift.sh` reports it as drift until you do.
 
 > **Safety:** no `deploy/woow-k3s/*.yaml` file sets `namespace:` - the target
 > namespace for every command above and in each instance file is controlled

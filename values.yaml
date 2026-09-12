@@ -67,14 +67,18 @@ labels:
 # Deployment-level annotations (metadata.annotations), e.g. for adoption notes.
 annotations: {}
 
-# Pod-template annotations (spec.template.metadata.annotations), e.g. for a
-# checksum/config-reload marker. {} renders no `annotations:` key under
-# `template:`. NOTE: neither live instance's kubectl.kubernetes.io/restartedAt
-# (added by a manual `kubectl rollout restart`) is modeled here on purpose -
-# it is transient, not part of the desired pod spec, and Helm/Kubernetes
-# merge annotation maps on apply rather than replacing them, so a take-over
-# upgrade leaves it untouched either way. Use this field for annotations that
-# should actually be managed by the chart.
+# Pod-template annotations (spec.template.metadata.annotations). {} renders no
+# `annotations:` key under `template:`.
+#
+# This is also how a live instance's kubectl.kubernetes.io/restartedAt is
+# reproduced. `kubectl rollout restart` stamps that annotation INTO the stored
+# pod template, so it is part of the running pod template's hash: a chart that
+# left it out would render a pod template that differs from the live one, and
+# a `--take-ownership` upgrade with three-way merge would remove it and roll
+# the Deployment. Each instance file under deploy/woow-k3s/ therefore carries
+# the exact timestamp its Deployment currently has. When an operator runs
+# `kubectl rollout restart` again, copy the new value back into that file
+# (scripts/check-drift.sh reports the drift).
 podAnnotations: {}
 
 strategy:

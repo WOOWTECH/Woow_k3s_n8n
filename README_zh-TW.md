@@ -112,7 +112,7 @@ helm --kube-context woow-k3s upgrade --install n8n . -n woowtech-odoo \
 | `strategy.type` | `RollingUpdate` | 或 `Recreate` |
 | `nodeSelector` / `podSecurityContext` / `containerSecurityContext` | `{}` | 原封不動透傳的 map |
 | `probes.liveness` / `.readiness` / `.startup` | `{}`（關閉） | 原封不動的 k8s probe 物件 |
-| `podAnnotations` | `{}` | Pod-template 的 `metadata.annotations`（只給 chart 自己管理的用途，見下方「從 kubectl manifest 遷移」） |
+| `podAnnotations` | `{}` | Pod-template 的 `metadata.annotations`；兩個線上實例都在這裡設自己的 `kubectl.kubernetes.io/restartedAt`（見下方「從 kubectl manifest 遷移」） |
 | `env` | basic-auth + 時區/host/port/protocol/webhook/... | 完整、順序固定的容器環境變數清單 |
 | `persistence.storageClassName` | `longhorn-delete`（測試預設） | woow-k3s 正式實例用 `longhorn` |
 | `tests.enabled` | `true` | `helm test` smoke pod |
@@ -146,17 +146,23 @@ woow-k3s 上現有的每個 n8n 都是純 `kubectl apply`。搭配對應的實�
 這個 chart 跟目前正在跑的 Deployment/Service/PVC 逐欄位相同。唯一刻意的差異：
 
 1. PVC 會多一個 `helm.sh/resource-policy: keep`（純 `kubectl apply` 時沒有這個
-   keep policy）。
-2. 接管後會加上 Helm 自己的 release 追蹤 annotations/labels。
-3. 容器環境變數清單會以固定順序產生（先放從 Secret 來的變數，再放
-   `extraEnv`）；n8n 不在乎環境變數的順序。
-4. 兩個正式 Deployment 目前的 `spec.template.metadata.annotations` 都帶著一個
-   `kubectl.kubernetes.io/restartedAt` 時間戳（來自某次手動 `kubectl rollout
-   restart`），這個 chart 預設不會重現它。這只是操作留下的暫時性 metadata，
-   不屬於期望的 pod spec，而且 Kubernetes/Helm 在 apply 時是合併 annotation
-   map 而不是整個取代，所以接管升級不論如何都不會動到它、也不會因此重啟
-   pod。如果某個實例真的需要讓 chart 管理 pod-template annotation，用
-   `podAnnotations`。
+   keep policy）。這只動到 PVC 的 metadata，不碰 pod template，所以接管時
+   還是不會重啟任何東西。
+2. 接管後會加上 Helm 自己的 release 追蹤 metadata：`meta.helm.sh/release-name`
+   與 `-namespace` annotation，以及 `app.kubernetes.io/managed-by: Helm`（會蓋掉
+   `cindytech` 那組物件現在帶的 `app.kubernetes.io/managed-by: kubectl`）。
+   只動到物件的 metadata，selector 跟 pod template 都不會變，所以不會重啟。
+
+除此之外沒有別的差異。pod template 是逐字重現的，其中兩個細節特別容易漏掉：
+
+- **環境變數順序。** 每個實例檔案的 `env` 是照線上容器的實際順序列出的。
+  Kubernetes 會照 pod template 寫下來的樣子做雜湊，光是重排順序就會讓
+  ReplicaSet 重建。
+- **`kubectl.kubernetes.io/restartedAt`。** `kubectl rollout restart` 會把這個
+  annotation 寫進**儲存起來的** pod template，所以它本來就是線上 pod-template
+  雜湊的一部分。每個實例檔案都用 `podAnnotations` 帶著它的 Deployment 目前
+  那個時間戳。日後只要有人再跑一次 `kubectl rollout restart`，就要把新的時間戳
+  複製回那個檔案 - 在那之前 `scripts/check-drift.sh` 會一直回報 drift。
 
 > **安全性：** 沒有任何 `deploy/woow-k3s/*.yaml` 檔案會設定 `namespace:` -
 > 上面每一條指令、每個實例檔案的目標 namespace，完全是由 `-n`/`--namespace`

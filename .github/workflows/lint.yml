@@ -56,6 +56,34 @@ jobs:
           done
           echo "every template is tracked and renders"
 
+      - name: Instance files keep object placement under -n and reproduce restartedAt
+        run: |
+          pip install --quiet pyyaml
+          python3 - <<'EOF'
+          import glob, sys, yaml
+          bad = []
+          for f in sorted(glob.glob("deploy/**/*.yaml", recursive=True)):
+              v = yaml.safe_load(open(f)) or {}
+              # A values-file `namespace:` silently wins over `-n`, which turned a
+              # take-over rehearsal in a test namespace into a write to the real one.
+              if "namespace" in v:
+                  bad.append(f"{f}: must not set `namespace:` - placement is `-n` only")
+              # `kubectl rollout restart` stamps restartedAt into the STORED pod
+              # template, so it is part of the live pod-template hash: dropping it
+              # would make a --take-ownership upgrade roll the Deployment.
+              ann = v.get("podAnnotations") or {}
+              if "kubectl.kubernetes.io/restartedAt" not in ann:
+                  bad.append(f"{f}: podAnnotations must carry the live "
+                             f"kubectl.kubernetes.io/restartedAt timestamp")
+          sys.exit("\n".join(bad)) if bad else print("instance files ok")
+          EOF
+          # Rendering with a sentinel namespace must land every object in it.
+          for f in deploy/woow-k3s/*.yaml; do
+            got=$(helm template t . -n SENTINEL -f "$f" --skip-tests | grep '^  namespace:' | sort -u)
+            [ "$got" = "  namespace: SENTINEL" ] || { echo "::error::$f: -n does not control placement: $got"; exit 1; }
+          done
+          echo "-n controls placement for every instance file"
+
       - name: n8n-MCP is not part of this chart
         run: |
           pip install --quiet pyyaml
