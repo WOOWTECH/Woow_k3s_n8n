@@ -1,0 +1,40 @@
+{{- /*
+`helm test` smoke pod, read-only: GET /healthz on the Service and expect 200.
+/healthz is not behind N8N_BASIC_AUTH (n8n's own liveness/readiness probes
+rely on this), so no credential is needed here.
+*/ -}}
+{{- if .Values.tests.enabled }}
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ .Release.Name }}-smoke
+  namespace: {{ include "n8n.namespace" . }}
+  labels:
+    app.kubernetes.io/component: smoke-test
+  annotations:
+    helm.sh/hook: test
+    # Kept until the next `helm test` so `helm test --logs` can always read it.
+    helm.sh/hook-delete-policy: before-hook-creation
+spec:
+  restartPolicy: Never
+  containers:
+    - name: smoke
+      image: {{ .Values.initContainer.image }}
+      command: ["sh", "-c"]
+      args:
+        - |
+          set -eu
+          url="http://{{ include "n8n.serviceName" . }}:{{ .Values.port }}/healthz"
+          echo "GET $url"
+          body=$(wget -q -O - "$url")
+          echo "$body"
+          echo "$body" | grep -q '"status":"ok"'
+          echo "SMOKE OK"
+      resources:
+        requests:
+          cpu: 10m
+          memory: 16Mi
+        limits:
+          cpu: 200m
+          memory: 64Mi
+{{- end }}

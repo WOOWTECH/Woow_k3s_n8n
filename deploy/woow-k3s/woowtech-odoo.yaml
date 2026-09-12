@@ -1,0 +1,105 @@
+# Instance values for the production n8n at https://n8n.woowtech.io
+# (Helm release `n8n`, namespace `woowtech-odoo`, adopted from a kubectl-applied
+# Deployment/Service/PVC that already exists there alongside Odoo).
+#
+# NO SECRETS HERE: with secrets.create=false (the chart default) the chart only
+# references the existing Secret `n8n-secrets`. It also has N8N_API_KEY and
+# MCP_AUTH_TOKEN keys left over from the in-cluster n8n-MCP sidecar; this chart
+# does not read or need them (n8n-MCP is now its own chart/release - see
+# WOOWTECH/woow_n8n_mcp_server).
+#
+# Reproduce the live objects (must render identically, see scripts/check-drift.sh):
+#   helm template n8n . -n woowtech-odoo -f deploy/woow-k3s/woowtech-odoo.yaml --skip-tests
+#
+# Take over the running kubectl-applied objects without restarting them:
+#   helm --kube-context woow-k3s upgrade --install n8n . -n woowtech-odoo \
+#     -f deploy/woow-k3s/woowtech-odoo.yaml --take-ownership
+
+namespace: woowtech-odoo
+fullnameOverride: n8n
+
+existingSecret: n8n-secrets
+keepOnUninstall: true
+
+image:
+  repository: n8nio/n8n
+  tag: latest
+  pullPolicy: Always
+
+replicas: 1
+
+basicAuth:
+  active: true
+  user: woowtech@designsmart.com.tw
+
+labels:
+  selector:
+    app: n8n
+  deployment: {}
+
+strategy:
+  type: RollingUpdate
+
+port: 5678
+
+# Exact env set of the live Deployment (order does not matter to n8n; the
+# basic-auth pair and the two secret-backed vars are always emitted first by
+# this chart - see "Design decisions" in README.md).
+extraEnv:
+  - name: GENERIC_TIMEZONE
+    value: Asia/Taipei
+  - name: N8N_HOST
+    value: "0.0.0.0"
+  - name: N8N_PORT
+    value: "5678"
+  - name: N8N_PROTOCOL
+    value: http
+  - name: NODE_ENV
+    value: production
+  - name: N8N_WEBHOOK_URL
+    value: https://n8n.woowtech.io/
+  - name: NODE_OPTIONS
+    value: --max-old-space-size=4096
+  - name: EXECUTIONS_TIMEOUT
+    value: "300"
+  - name: EXECUTIONS_TIMEOUT_MAX
+    value: "600"
+  - name: N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS
+    value: "false"
+
+resources:
+  requests:
+    cpu: 200m
+    memory: 512Mi
+  limits:
+    cpu: "3"
+    memory: 6Gi
+
+initContainer:
+  enabled: true
+  image: busybox:1.36
+  pullPolicy: IfNotPresent
+  # The live initContainer restates the timing/webhook env vars (harmless -
+  # the init container only runs `chown`); kept for an exact reproduction.
+  env:
+    - name: N8N_WEBHOOK_URL
+      value: https://n8n.woowtech.io/
+    - name: NODE_OPTIONS
+      value: --max-old-space-size=4096
+    - name: EXECUTIONS_TIMEOUT
+      value: "300"
+    - name: EXECUTIONS_TIMEOUT_MAX
+      value: "600"
+    - name: N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS
+      value: "false"
+
+persistence:
+  claimName: n8n-data
+  storageClassName: longhorn
+  size: 5Gi
+
+service:
+  name: n8n
+
+tests:
+  enabled: true

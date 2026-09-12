@@ -1,0 +1,150 @@
+# Instance values for cindytech's n8n (Helm release `cindytech-n8n`, namespace
+# `cindytech`, adopted from a kubectl-applied Deployment/Service/PVC named
+# cindytech-n8n / cindytech-n8n-svc / cindytech-n8n-pvc).
+#
+# NO SECRETS HERE: with secrets.create=false (the chart default) the chart only
+# references the existing Secret `cindytech-n8n-secrets`. It also has
+# N8N_API_KEY and MCP_AUTH_TOKEN keys left over from the in-cluster n8n-MCP
+# sidecar; this chart does not read or need them (n8n-MCP is now its own
+# chart/release - see WOOWTECH/woow_n8n_mcp_server).
+#
+# Reproduce the live objects (must render identically, see scripts/check-drift.sh):
+#   helm template cindytech-n8n . -n cindytech -f deploy/woow-k3s/cindytech.yaml --skip-tests
+#
+# Take over the running kubectl-applied objects without restarting them:
+#   helm --kube-context woow-k3s upgrade --install cindytech-n8n . -n cindytech \
+#     -f deploy/woow-k3s/cindytech.yaml --take-ownership
+
+namespace: cindytech
+fullnameOverride: cindytech-n8n
+
+existingSecret: cindytech-n8n-secrets
+keepOnUninstall: true
+
+image:
+  repository: n8nio/n8n
+  tag: latest
+  pullPolicy: Always
+
+replicas: 1
+
+basicAuth:
+  active: true
+  user: admin
+
+labels:
+  selector:
+    app.kubernetes.io/component: n8n
+    app.kubernetes.io/name: cindytech
+  deployment:
+    app.kubernetes.io/component: n8n
+    app.kubernetes.io/managed-by: kubectl
+    app.kubernetes.io/name: cindytech
+    app.kubernetes.io/part-of: cindytech
+
+strategy:
+  type: Recreate
+
+automountServiceAccountToken: false
+
+nodeSelector:
+  node-role.kubernetes.io/control-plane: "true"
+
+podSecurityContext:
+  fsGroup: 1000
+  runAsGroup: 1000
+  runAsUser: 1000
+
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+
+port: 5678
+portName: http
+
+# Exact env set of the live Deployment (order does not matter to n8n; the
+# basic-auth pair and the two secret-backed vars are always emitted first by
+# this chart - see "Design decisions" in README.md).
+extraEnv:
+  - name: N8N_HOST
+    value: "0.0.0.0"
+  - name: N8N_PORT
+    value: "5678"
+  - name: N8N_PROTOCOL
+    value: https
+  - name: N8N_WEBHOOK_URL
+    value: https://cindytech1-n8n.woowtech.io/
+  - name: GENERIC_TIMEZONE
+    value: Asia/Taipei
+  - name: NODE_ENV
+    value: production
+  - name: NODE_OPTIONS
+    value: --max-old-space-size=4096
+  - name: EXECUTIONS_TIMEOUT
+    value: "300"
+  - name: EXECUTIONS_TIMEOUT_MAX
+    value: "600"
+
+probes:
+  liveness:
+    httpGet:
+      path: /healthz
+      port: 5678
+    initialDelaySeconds: 60
+    periodSeconds: 30
+    timeoutSeconds: 10
+  readiness:
+    httpGet:
+      path: /healthz
+      port: 5678
+    initialDelaySeconds: 10
+    periodSeconds: 10
+    timeoutSeconds: 5
+  startup:
+    httpGet:
+      path: /healthz
+      port: 5678
+    initialDelaySeconds: 15
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 30
+
+resources:
+  requests:
+    cpu: 200m
+    memory: 512Mi
+  limits:
+    cpu: "3"
+    memory: 6Gi
+
+initContainer:
+  enabled: true
+  image: busybox:1.36
+  pullPolicy: IfNotPresent
+  securityContext:
+    runAsUser: 0
+  resources:
+    limits:
+      cpu: 50m
+      memory: 32Mi
+
+persistence:
+  claimName: cindytech-n8n-pvc
+  storageClassName: longhorn
+  size: 5Gi
+  labels:
+    app.kubernetes.io/component: n8n
+    app.kubernetes.io/managed-by: kubectl
+    app.kubernetes.io/part-of: cindytech
+
+service:
+  name: cindytech-n8n-svc
+  labels:
+    app.kubernetes.io/component: n8n
+    app.kubernetes.io/managed-by: kubectl
+    app.kubernetes.io/part-of: cindytech
+
+tests:
+  enabled: true
