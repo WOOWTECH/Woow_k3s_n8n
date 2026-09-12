@@ -1,7 +1,9 @@
 {{- /*
 `helm test` smoke pod, read-only: GET /healthz on the Service and expect 200.
 /healthz is not behind N8N_BASIC_AUTH (n8n's own liveness/readiness probes
-rely on this), so no credential is needed here.
+rely on this), so no credential is needed here. The GET is retried until
+tests.timeoutSeconds - see the comment on the retry loop for why a single
+attempt produces false failures.
 */ -}}
 {{- if .Values.tests.enabled }}
 apiVersion: v1
@@ -25,11 +27,30 @@ spec:
         - |
           set -eu
           url="http://{{ include "n8n.serviceName" . }}:{{ .Values.port }}/healthz"
-          echo "GET $url"
-          body=$(wget -q -O - "$url")
-          echo "$body"
-          echo "$body" | grep -q '"status":"ok"'
-          echo "SMOKE OK"
+          # Retry rather than fail on the first refused connection. A pod this
+          # short-lived can start before the route to a Service ClusterIP is
+          # programmed for it: measured here on 2026-09-13, a probe pod was
+          # refused on its first attempt and succeeded 10s later, with n8n
+          # healthy and serving traffic the whole time. A single-attempt test
+          # therefore reports a false failure right after a rollout - which is
+          # exactly when `helm test` is most likely to be run.
+          deadline=$(( $(date +%s) + {{ .Values.tests.timeoutSeconds }} ))
+          attempt=0
+          while :; do
+            attempt=$((attempt + 1))
+            if body=$(wget -q -O - --timeout=5 "$url" 2>/dev/null); then
+              echo "attempt $attempt: $body"
+              echo "$body" | grep -q '"status":"ok"' && { echo "SMOKE OK"; exit 0; }
+              echo "unexpected body"; exit 1
+            fi
+            if [ "$(date +%s)" -ge "$deadline" ]; then
+              echo "SMOKE FAILED: GET $url never returned after $attempt attempts"
+              echo "in {{ .Values.tests.timeoutSeconds }}s"
+              exit 1
+            fi
+            [ $((attempt % 6)) -eq 1 ] && echo "attempt $attempt: GET $url not answering yet, retrying"
+            sleep 5
+          done
       resources:
         requests:
           cpu: 10m

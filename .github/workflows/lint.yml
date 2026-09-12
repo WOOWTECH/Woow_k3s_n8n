@@ -35,6 +35,9 @@ jobs:
           helm template n8n . -n woowtech-odoo -f deploy/woow-k3s/woowtech-odoo.yaml --skip-tests > /tmp/r/woowtech-odoo.yaml
           helm template cindytech-n8n . -n cindytech -f deploy/woow-k3s/cindytech.yaml --skip-tests > /tmp/r/cindytech.yaml
           helm template n8n . -n woowtech-odoo -f deploy/woow-k3s/woowtech-odoo.yaml          > /tmp/r/woowtech-odoo-tests.yaml
+          grep -q 'SMOKE FAILED' /tmp/r/woowtech-odoo-tests.yaml || {
+            echo "::error::smoke test lost its retry loop - a single attempt reports"
+            echo "::error::false failures right after a rollout"; exit 1; }
           helm template n8n . -n ht-n8n --set "$SECRETS,labels.selector.app=n8n"              > /tmp/r/secrets.yaml
           helm template n8n . -n ht-n8n --set "$SECRETS,labels.selector.app=n8n" \
             --set keepOnUninstall=false                                                       > /tmp/r/no-keep.yaml
