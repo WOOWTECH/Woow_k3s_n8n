@@ -14,8 +14,18 @@
 # Take over the running kubectl-applied objects without restarting them:
 #   helm --kube-context woow-k3s upgrade --install cindytech-n8n . -n cindytech \
 #     -f deploy/woow-k3s/cindytech.yaml --take-ownership
+#
+# SAFETY: this file intentionally does NOT set `namespace:`. Object placement
+# is controlled ENTIRELY by `-n`/`--namespace` on the command above. Never add
+# a `namespace:` key here (or to any other file under deploy/woow-k3s/) - the
+# `n8n.namespace` helper lets a values-file `namespace:` silently win over
+# `-n`, so a `-n <test-ns> -f deploy/woow-k3s/cindytech.yaml` rehearsal would
+# otherwise write to the REAL `cindytech` namespace instead of the test one.
+# This file is already a fixed one-release-per-namespace mapping
+# (`fullnameOverride: cindytech-n8n` + this exact pod spec only ever runs in
+# `cindytech`), so `-n` alone is sufficient and safe to vary for a rehearsal
+# in a test namespace.
 
-namespace: cindytech
 fullnameOverride: cindytech-n8n
 
 existingSecret: cindytech-n8n-secrets
@@ -27,10 +37,6 @@ image:
   pullPolicy: Always
 
 replicas: 1
-
-basicAuth:
-  active: true
-  user: admin
 
 labels:
   selector:

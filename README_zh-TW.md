@@ -103,7 +103,7 @@ helm --kube-context woow-k3s upgrade --install n8n . -n woowtech-odoo \
 
 | Value | 預設 | 說明 |
 |---|---|---|
-| `namespace` | `""`（release namespace） | 只有要裝到跟 `-n` 不同的 namespace 時才需要設 |
+| `namespace` | `""`（release namespace） | 只有要裝到跟 `-n` 不同的 namespace 時才需要設 - **絕對不要**在已提交的 `deploy/woow-k3s/*.yaml` 裡設定這個值，它會悄悄蓋過 `-n`（見 `values.yaml` 裡的警告） |
 | `fullnameOverride` | `""` | Deployment/Service/PVC 的基礎名稱（各物件也各自有自己的覆寫） |
 | `existingSecret` | `""`（必填） | 內含 `N8N_BASIC_AUTH_PASSWORD` / `N8N_ENCRYPTION_KEY` 的 Secret |
 | `secrets.create` | `false` | 從 `secrets.*` 渲染 Secret，取代使用 `existingSecret` |
@@ -112,6 +112,7 @@ helm --kube-context woow-k3s upgrade --install n8n . -n woowtech-odoo \
 | `strategy.type` | `RollingUpdate` | 或 `Recreate` |
 | `nodeSelector` / `podSecurityContext` / `containerSecurityContext` | `{}` | 原封不動透傳的 map |
 | `probes.liveness` / `.readiness` / `.startup` | `{}`（關閉） | 原封不動的 k8s probe 物件 |
+| `podAnnotations` | `{}` | Pod-template 的 `metadata.annotations`（只給 chart 自己管理的用途，見下方「從 kubectl manifest 遷移」） |
 | `env` | basic-auth + 時區/host/port/protocol/webhook/... | 完整、順序固定的容器環境變數清單 |
 | `persistence.storageClassName` | `longhorn-delete`（測試預設） | woow-k3s 正式實例用 `longhorn` |
 | `tests.enabled` | `true` | `helm test` smoke pod |
@@ -149,6 +150,20 @@ woow-k3s 上現有的每個 n8n 都是純 `kubectl apply`。搭配對應的實�
 2. 接管後會加上 Helm 自己的 release 追蹤 annotations/labels。
 3. 容器環境變數清單會以固定順序產生（先放從 Secret 來的變數，再放
    `extraEnv`）；n8n 不在乎環境變數的順序。
+4. 兩個正式 Deployment 目前的 `spec.template.metadata.annotations` 都帶著一個
+   `kubectl.kubernetes.io/restartedAt` 時間戳（來自某次手動 `kubectl rollout
+   restart`），這個 chart 預設不會重現它。這只是操作留下的暫時性 metadata，
+   不屬於期望的 pod spec，而且 Kubernetes/Helm 在 apply 時是合併 annotation
+   map 而不是整個取代，所以接管升級不論如何都不會動到它、也不會因此重啟
+   pod。如果某個實例真的需要讓 chart 管理 pod-template annotation，用
+   `podAnnotations`。
+
+> **安全性：** 沒有任何 `deploy/woow-k3s/*.yaml` 檔案會設定 `namespace:` -
+> 上面每一條指令、每個實例檔案的目標 namespace，完全是由 `-n`/`--namespace`
+> 決定。絕對不要在這些檔案裡加上 `namespace:` 這個 key（見 `values.yaml`
+> 裡 `namespace` 旁的警告）；一旦加了，那個 release 就不再由 `-n` 控制物件
+> 要放到哪裡 - 在拿正式實例的檔案去 `-f` 一個拋棄式測試 namespace 做接管
+> 演練時，這特別危險。
 
 現有的 kubectl 佈署可以直接接管而不重啟任何 pod：
 

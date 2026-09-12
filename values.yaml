@@ -13,6 +13,14 @@
 
 # "" = the release namespace (-n). Only set this to install into a namespace
 # different from -n; the chart never creates a Namespace object either way.
+#
+# DANGER: never set this in a checked-in per-instance file under
+# deploy/woow-k3s/. A non-empty `namespace:` here silently WINS over `-n`
+# (see the n8n.namespace helper), so `-n <test-ns> -f deploy/woow-k3s/<real
+# instance>.yaml` would place objects in the real instance's namespace
+# instead of the test one. Every file under deploy/woow-k3s/ is already a
+# fixed one-release-per-namespace mapping, so `-n` alone is enough - leave
+# this "" there and vary only `-n`.
 namespace: ""
 
 nameOverride: ""
@@ -58,6 +66,16 @@ labels:
 
 # Deployment-level annotations (metadata.annotations), e.g. for adoption notes.
 annotations: {}
+
+# Pod-template annotations (spec.template.metadata.annotations), e.g. for a
+# checksum/config-reload marker. {} renders no `annotations:` key under
+# `template:`. NOTE: neither live instance's kubectl.kubernetes.io/restartedAt
+# (added by a manual `kubectl rollout restart`) is modeled here on purpose -
+# it is transient, not part of the desired pod spec, and Helm/Kubernetes
+# merge annotation maps on apply rather than replacing them, so a take-over
+# upgrade leaves it untouched either way. Use this field for annotations that
+# should actually be managed by the chart.
+podAnnotations: {}
 
 strategy:
   type: RollingUpdate

@@ -105,7 +105,7 @@ identically to the current live objects, so nothing restarts.
 
 | Value | Default | Description |
 |---|---|---|
-| `namespace` | `""` (release namespace) | Only set to install into a namespace different from `-n` |
+| `namespace` | `""` (release namespace) | Only set to install into a namespace different from `-n` - **never** set this in a checked-in `deploy/woow-k3s/*.yaml` file, it silently overrides `-n` (see `values.yaml`) |
 | `fullnameOverride` | `""` | Base name for the Deployment/Service/PVC (each object also has its own override) |
 | `existingSecret` | `""` (required) | Secret with `N8N_BASIC_AUTH_PASSWORD` / `N8N_ENCRYPTION_KEY` |
 | `secrets.create` | `false` | Render a Secret from `secrets.*` instead of using `existingSecret` |
@@ -114,6 +114,7 @@ identically to the current live objects, so nothing restarts.
 | `strategy.type` | `RollingUpdate` | Or `Recreate` |
 | `nodeSelector` / `podSecurityContext` / `containerSecurityContext` | `{}` | Raw pass-through maps |
 | `probes.liveness` / `.readiness` / `.startup` | `{}` (disabled) | Raw k8s probe objects |
+| `podAnnotations` | `{}` | Pod-template `metadata.annotations` (chart-managed only; see "Migrating" below) |
 | `env` | basic-auth + timezone/host/port/protocol/webhook/... | Full, exactly-ordered container env list |
 | `persistence.storageClassName` | `longhorn-delete` (test default) | `longhorn` on woow-k3s instances |
 | `tests.enabled` | `true` | `helm test` smoke pod |
@@ -153,6 +154,22 @@ running Deployment/Service/PVC. The only intentional differences:
 2. Helm's own release-tracking annotations/labels are added on adoption.
 3. The container env list is generated in a fixed order (secret-backed vars
    first, then `extraEnv`); n8n does not care about env order.
+4. Neither live Deployment's `spec.template.metadata.annotations` (both
+   currently carry a `kubectl.kubernetes.io/restartedAt` timestamp left over
+   from a manual `kubectl rollout restart`) is reproduced by default. It is
+   transient operator metadata, not part of the desired pod spec, and
+   Kubernetes/Helm merge annotation maps on apply rather than replacing them
+   - so a take-over upgrade leaves it in place either way and never restarts
+   the pod over it. Use `podAnnotations` if an instance needs the chart to
+   actually manage a pod-template annotation.
+
+> **Safety:** no `deploy/woow-k3s/*.yaml` file sets `namespace:` - the target
+> namespace for every command above and in each instance file is controlled
+> entirely by `-n`/`--namespace`. Never add a `namespace:` key to one of
+> these files (see the warning next to `namespace` in `values.yaml`); doing
+> so would make `-n` silently stop controlling object placement for that
+> release, which is especially dangerous when rehearsing a take-over in a
+> disposable test namespace with `-f` pointed at a real instance file.
 
 An existing kubectl deployment can be adopted without restarting any pod:
 

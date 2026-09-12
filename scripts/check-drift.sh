@@ -4,6 +4,11 @@
 #   2. cluster vs chart   : kubectl diff of the rendered chart against live objects
 # Extra arguments are passed to `helm template`, e.g. -f my-values.yaml.
 #   CONTEXT=woow-k3s RELEASE=n8n NAMESPACE=woowtech-odoo scripts/check-drift.sh -f deploy/woow-k3s/woowtech-odoo.yaml
+#
+# Read-only (helm template / helm get manifest / kubectl diff never write),
+# but NAMESPACE here still has to be the release's real namespace: none of
+# the -f files under deploy/woow-k3s/ set `namespace:` (see values.yaml), so
+# this script's own `-n "$NAMESPACE"` is what places the rendered objects.
 set -euo pipefail
 
 CONTEXT="${CONTEXT:-woow-k3s}"

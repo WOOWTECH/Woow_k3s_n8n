@@ -14,8 +14,18 @@
 # Take over the running kubectl-applied objects without restarting them:
 #   helm --kube-context woow-k3s upgrade --install n8n . -n woowtech-odoo \
 #     -f deploy/woow-k3s/woowtech-odoo.yaml --take-ownership
+#
+# SAFETY: this file intentionally does NOT set `namespace:`. Object placement
+# is controlled ENTIRELY by `-n`/`--namespace` on the command above. Never add
+# a `namespace:` key here (or to any other file under deploy/woow-k3s/) - the
+# `n8n.namespace` helper lets a values-file `namespace:` silently win over
+# `-n`, so a `-n <test-ns> -f deploy/woow-k3s/woowtech-odoo.yaml` rehearsal
+# would otherwise write to the REAL production namespace instead of the test
+# one. This file is already a fixed one-release-per-namespace mapping
+# (`fullnameOverride: n8n` + this exact pod spec only ever runs in
+# `woowtech-odoo`), so `-n` alone is sufficient and safe to vary for a
+# rehearsal in a test namespace.
 
-namespace: woowtech-odoo
 fullnameOverride: n8n
 
 existingSecret: n8n-secrets
