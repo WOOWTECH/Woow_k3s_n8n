@@ -112,7 +112,7 @@ helm --kube-context woow-k3s upgrade --install n8n . -n woowtech-odoo \
 | `strategy.type` | `RollingUpdate` | 或 `Recreate` |
 | `nodeSelector` / `podSecurityContext` / `containerSecurityContext` | `{}` | 原封不動透傳的 map |
 | `probes.liveness` / `.readiness` / `.startup` | `{}`（關閉） | 原封不動的 k8s probe 物件 |
-| `extraEnv` | 時區/host/port/protocol/webhook/... | 除了兩個從 Secret 來的變數之外，完整的容器環境變數清單 |
+| `env` | basic-auth + 時區/host/port/protocol/webhook/... | 完整、順序固定的容器環境變數清單 |
 | `persistence.storageClassName` | `longhorn-delete`（測試預設） | woow-k3s 正式實例用 `longhorn` |
 | `tests.enabled` | `true` | `helm test` smoke pod |
 

@@ -43,10 +43,6 @@ image:
 
 replicas: 1
 
-basicAuth:
-  active: true
-  user: admin
-
 labels:
   # Deployment selector AND pod-template labels. REQUIRED - has no default on
   # purpose: Helm deep-merges map values, so a non-empty default here would
@@ -85,10 +81,23 @@ port: 5678
 # "" omits the container/service port `name` field.
 portName: ""
 
-# Extra container env entries appended after the two secret-backed ones
-# (N8N_BASIC_AUTH_PASSWORD, N8N_ENCRYPTION_KEY). Each entry is either
-# {name, value} or {name, valueFrom: {...}}, rendered as-is.
-extraEnv:
+# Full, EXACTLY-ORDERED container env list. Order matters here: Kubernetes
+# hashes the pod template verbatim, so re-ordering this list on an already
+# running instance recreates its pod. Each entry is one of:
+#   {name, value}                  - literal value
+#   {name, valueFromSecret: KEY}   - secretKeyRef against the resolved Secret
+#                                    (existingSecret, or the one this chart
+#                                    creates when secrets.create=true)
+#   {name, valueFrom: {...}}       - any other raw valueFrom (fieldRef, etc.)
+env:
+  - name: N8N_BASIC_AUTH_ACTIVE
+    value: "true"
+  - name: N8N_BASIC_AUTH_USER
+    value: admin
+  - name: N8N_BASIC_AUTH_PASSWORD
+    valueFromSecret: N8N_BASIC_AUTH_PASSWORD
+  - name: N8N_ENCRYPTION_KEY
+    valueFromSecret: N8N_ENCRYPTION_KEY
   - name: GENERIC_TIMEZONE
     value: Asia/Taipei
   - name: N8N_HOST

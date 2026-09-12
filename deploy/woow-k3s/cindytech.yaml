@@ -64,10 +64,9 @@ containerSecurityContext:
 port: 5678
 portName: http
 
-# Exact env set of the live Deployment (order does not matter to n8n; the
-# basic-auth pair and the two secret-backed vars are always emitted first by
-# this chart - see "Design decisions" in README.md).
-extraEnv:
+# EXACT env order of the live Deployment - order is load-bearing (see
+# values.yaml). Do not reorder without a rehearsed takeover check.
+env:
   - name: N8N_HOST
     value: "0.0.0.0"
   - name: N8N_PORT
@@ -76,6 +75,14 @@ extraEnv:
     value: https
   - name: N8N_WEBHOOK_URL
     value: https://cindytech1-n8n.woowtech.io/
+  - name: N8N_BASIC_AUTH_ACTIVE
+    value: "true"
+  - name: N8N_BASIC_AUTH_USER
+    value: admin
+  - name: N8N_BASIC_AUTH_PASSWORD
+    valueFromSecret: N8N_BASIC_AUTH_PASSWORD
+  - name: N8N_ENCRYPTION_KEY
+    valueFromSecret: N8N_ENCRYPTION_KEY
   - name: GENERIC_TIMEZONE
     value: Asia/Taipei
   - name: NODE_ENV

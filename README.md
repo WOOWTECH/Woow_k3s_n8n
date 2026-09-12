@@ -114,7 +114,7 @@ identically to the current live objects, so nothing restarts.
 | `strategy.type` | `RollingUpdate` | Or `Recreate` |
 | `nodeSelector` / `podSecurityContext` / `containerSecurityContext` | `{}` | Raw pass-through maps |
 | `probes.liveness` / `.readiness` / `.startup` | `{}` (disabled) | Raw k8s probe objects |
-| `extraEnv` | timezone/host/port/protocol/webhook/... | Full list of container env beyond the two secret-backed vars |
+| `env` | basic-auth + timezone/host/port/protocol/webhook/... | Full, exactly-ordered container env list |
 | `persistence.storageClassName` | `longhorn-delete` (test default) | `longhorn` on woow-k3s instances |
 | `tests.enabled` | `true` | `helm test` smoke pod |
 

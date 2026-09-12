@@ -57,24 +57,15 @@ spec:
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           env:
-            - name: N8N_BASIC_AUTH_ACTIVE
-              value: {{ .Values.basicAuth.active | quote }}
-            - name: N8N_BASIC_AUTH_USER
-              value: {{ .Values.basicAuth.user | quote }}
-            - name: N8N_BASIC_AUTH_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: {{ include "n8n.secretName" . }}
-                  key: N8N_BASIC_AUTH_PASSWORD
-            - name: N8N_ENCRYPTION_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: {{ include "n8n.secretName" . }}
-                  key: N8N_ENCRYPTION_KEY
-            {{- range .Values.extraEnv }}
+            {{- range .Values.env }}
             - name: {{ .name }}
               {{- if hasKey . "value" }}
               value: {{ .value | quote }}
+              {{- else if hasKey . "valueFromSecret" }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "n8n.secretName" $ }}
+                  key: {{ .valueFromSecret }}
               {{- else if hasKey . "valueFrom" }}
               valueFrom:
                 {{- toYaml .valueFrom | nindent 16 }}
