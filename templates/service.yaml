@@ -10,7 +10,7 @@ metadata:
 spec:
   type: {{ .Values.service.type }}
   selector:
-    {{- toYaml (required "labels.selector is required, e.g. {app: n8n}" .Values.labels.selector) | nindent 4 }}
+    {{- include "n8n.selector" . | nindent 4 }}
   ports:
     - port: {{ .Values.port }}
       targetPort: {{ .Values.port }}

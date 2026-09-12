@@ -45,6 +45,14 @@ fullnameOverride wins outright; otherwise <release>-<name>, collapsed to just
 {{- end -}}
 {{- end -}}
 
+{{/* Deployment/Service selector labels: fails on {} too, unlike `required`. */}}
+{{- define "n8n.selector" -}}
+{{- if not .Values.labels.selector -}}
+{{ fail "labels.selector is required, e.g. {app: n8n}" }}
+{{- end -}}
+{{- toYaml .Values.labels.selector -}}
+{{- end -}}
+
 {{/* `annotations:` block with the keep policy, or nothing. */}}
 {{- define "n8n.keepAnnotations" -}}
 {{- if .Values.keepOnUninstall -}}
