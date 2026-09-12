@@ -8,7 +8,7 @@ description: >-
   longer part of this chart: it is its own chart and release in
   WOOWTECH/woow_n8n_mcp_server.
 type: application
-version: 2.0.0
+version: 2.1.0
 appVersion: "latest"
 kubeVersion: ">=1.24.0-0"
 keywords:

@@ -46,7 +46,16 @@ keepOnUninstall: true
 image:
   repository: n8nio/n8n
   tag: latest
-  # Matches Kubernetes' own default pull behaviour for a ":latest" tag.
+  # Pin an exact build: when set, the image reference becomes
+  # "<repository>@<digest>" and `tag` is ignored. STRONGLY recommended for any
+  # live instance, because ":latest" moves: on 2026-09-13 Docker Hub's :latest
+  # was a third build that matched NEITHER running instance, so with
+  # pullPolicy: Always any restart silently upgraded n8n to a different version.
+  digest: ""
+  # Matches Kubernetes' own default pull behaviour for a ":latest" tag. Set
+  # IfNotPresent together with `digest` so a pinned build is served from the
+  # node cache and a restart does not depend on registry reachability
+  # (Docker Hub pulls from this cluster fail intermittently with TLS timeouts).
   pullPolicy: Always
 
 replicas: 1

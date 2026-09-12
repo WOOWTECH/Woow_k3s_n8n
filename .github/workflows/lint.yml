@@ -75,6 +75,26 @@ jobs:
               if "kubectl.kubernetes.io/restartedAt" not in ann:
                   bad.append(f"{f}: podAnnotations must carry the live "
                              f"kubectl.kubernetes.io/restartedAt timestamp")
+              # A live instance must pin an exact build. With ":latest" +
+              # pullPolicy: Always, every restart silently pulled whatever
+              # ":latest" pointed at that day - on 2026-09-13 the two instances
+              # and Docker Hub's ":latest" were three DIFFERENT builds.
+              img = v.get("image") or {}
+              digest = img.get("digest") or ""
+              if not digest.startswith("sha256:"):
+                  bad.append(f"{f}: image.digest must pin an exact sha256 build, "
+                             f"not the floating \":{img.get('tag', 'latest')}\" tag")
+              # IfNotPresent is what makes the pin independent of Docker Hub,
+              # whose pulls from this cluster intermittently TLS-timeout.
+              if digest and img.get("pullPolicy") != "IfNotPresent":
+                  bad.append(f"{f}: with image.digest set, image.pullPolicy must be "
+                             f"IfNotPresent (got {img.get('pullPolicy')!r}) so a "
+                             f"restart is served from the node cache")
+              # A single ReadWriteOnce PVC cannot be held by a surge pod and the
+              # old pod at once, so RollingUpdate can hang the rollout forever.
+              if ((v.get("strategy") or {}).get("type")) != "Recreate":
+                  bad.append(f"{f}: strategy.type must be Recreate - one RWO PVC "
+                             f"plus RollingUpdate deadlocks the rollout")
           sys.exit("\n".join(bad)) if bad else print("instance files ok")
           EOF
           # Rendering with a sentinel namespace must land every object in it.
