@@ -1,0 +1,171 @@
+name: chart
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch: {}
+
+env:
+  # Dummy values only: exercises templates/secret.yaml without any real key.
+  SECRETS: secrets.create=true,secrets.basicAuthPassword=x,secrets.encryptionKey=x
+  KUBECONFORM_VERSION: v0.6.7
+  KUBECONFORM_SHA256: 95f14e87aa28c09d5941f11bd024c1d02fdc0303ccaa23f61cef67bc92619d73
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v3.19.5
+
+      - name: helm lint
+        run: |
+          helm lint . --set "labels.selector.app=n8n,existingSecret=n8n-secrets"
+          helm lint . -f deploy/woow-k3s/woowtech-odoo.yaml
+          helm lint . -f deploy/woow-k3s/cindytech.yaml
+          helm lint . --set "$SECRETS,labels.selector.app=n8n"
+
+      - name: helm template (every values combination)
+        run: |
+          mkdir -p /tmp/r
+          helm template n8n . -n woowtech-odoo -f deploy/woow-k3s/woowtech-odoo.yaml --skip-tests > /tmp/r/woowtech-odoo.yaml
+          helm template cindytech-n8n . -n cindytech -f deploy/woow-k3s/cindytech.yaml --skip-tests > /tmp/r/cindytech.yaml
+          helm template n8n . -n woowtech-odoo -f deploy/woow-k3s/woowtech-odoo.yaml          > /tmp/r/woowtech-odoo-tests.yaml
+          helm template n8n . -n ht-n8n --set "$SECRETS,labels.selector.app=n8n"              > /tmp/r/secrets.yaml
+          helm template n8n . -n ht-n8n --set "$SECRETS,labels.selector.app=n8n" \
+            --set keepOnUninstall=false                                                       > /tmp/r/no-keep.yaml
+          # The shape of a test install: own namespace, disposable storage, no mcp.
+          helm template n8n . -n ht-n8n \
+            --set "$SECRETS,labels.selector.app=n8n" \
+            --set persistence.storageClassName=longhorn-delete                                > /tmp/r/test-install.yaml
+          wc -l /tmp/r/*.yaml
+
+      - name: Every template is tracked and renders
+        run: |
+          # An unanchored .gitignore pattern once kept a chart's own Secret
+          # template out of git; guard against the same mistake here.
+          for f in $(find templates -type f); do
+            if git check-ignore --no-index -q "$f"; then echo "::error::$f is matched by .gitignore"; exit 1; fi
+          done
+          for f in $(find templates -type f -name '*.yaml'); do
+            grep -q "^# Source: n8n/$f\$" /tmp/r/*.yaml || { echo "::error::$f never renders"; exit 1; }
+          done
+          echo "every template is tracked and renders"
+
+      - name: Instance files keep object placement under -n and reproduce restartedAt
+        run: |
+          pip install --quiet pyyaml
+          python3 - <<'EOF'
+          import glob, sys, yaml
+          bad = []
+          for f in sorted(glob.glob("deploy/**/*.yaml", recursive=True)):
+              v = yaml.safe_load(open(f)) or {}
+              # A values-file `namespace:` silently wins over `-n`, which turned a
+              # take-over rehearsal in a test namespace into a write to the real one.
+              if "namespace" in v:
+                  bad.append(f"{f}: must not set `namespace:` - placement is `-n` only")
+              # `kubectl rollout restart` stamps restartedAt into the STORED pod
+              # template, so it is part of the live pod-template hash: dropping it
+              # would make a --take-ownership upgrade roll the Deployment.
+              ann = v.get("podAnnotations") or {}
+              if "kubectl.kubernetes.io/restartedAt" not in ann:
+                  bad.append(f"{f}: podAnnotations must carry the live "
+                             f"kubectl.kubernetes.io/restartedAt timestamp")
+          sys.exit("\n".join(bad)) if bad else print("instance files ok")
+          EOF
+          # Rendering with a sentinel namespace must land every object in it.
+          for f in deploy/woow-k3s/*.yaml; do
+            got=$(helm template t . -n SENTINEL -f "$f" --skip-tests | grep '^  namespace:' | sort -u)
+            [ "$got" = "  namespace: SENTINEL" ] || { echo "::error::$f: -n does not control placement: $got"; exit 1; }
+          done
+          echo "-n controls placement for every instance file"
+
+      - name: n8n-MCP is not part of this chart
+        run: |
+          pip install --quiet pyyaml
+          python3 - <<'EOF'
+          import glob, sys, yaml
+          bad = []
+          for f in glob.glob("/tmp/r/*.yaml"):
+              for d in yaml.safe_load_all(open(f)):
+                  if d and "mcp" in d["metadata"]["name"].lower():
+                      bad.append(f"{f}: {d['kind']}/{d['metadata']['name']}")
+          sys.exit("\n".join(bad)) if bad else print("no MCP object rendered")
+          EOF
+
+      - name: kubeconform (schema validation)
+        run: |
+          curl -sSLo /tmp/kc.tgz https://github.com/yannh/kubeconform/releases/download/${KUBECONFORM_VERSION}/kubeconform-linux-amd64.tar.gz
+          echo "${KUBECONFORM_SHA256}  /tmp/kc.tgz" | sha256sum -c -
+          tar -xzf /tmp/kc.tgz -C /usr/local/bin kubeconform
+          kubeconform -strict -summary /tmp/r/*.yaml
+
+      - name: Required values are enforced
+        run: |
+          if helm template n8n . --set "labels.selector.app=n8n" > /dev/null 2>&1; then
+            echo "::error::existingSecret is not enforced when secrets.create=false"; exit 1
+          fi
+          if helm template n8n . --set existingSecret=x > /dev/null 2>&1; then
+            echo "::error::labels.selector is not enforced"; exit 1
+          fi
+          if helm template n8n . --set "secrets.create=true,secrets.encryptionKey=x,labels.selector.app=n8n" > /dev/null 2>&1; then
+            echo "::error::secrets.basicAuthPassword is not enforced"; exit 1
+          fi
+          if helm template n8n . --set "secrets.create=true,secrets.basicAuthPassword=x,labels.selector.app=n8n" > /dev/null 2>&1; then
+            echo "::error::secrets.encryptionKey is not enforced"; exit 1
+          fi
+          echo "required() guards fire"
+          n=$(grep -c '^kind: Secret$' /tmp/r/secrets.yaml || true)
+          [ "$n" -eq 1 ] || { echo "expected 1 Secret with secrets.create=true, got $n"; exit 1; }
+          echo "secrets.create=true renders the Secret"
+
+      - name: Keep policy on PVCs and chart-created Secrets
+        run: |
+          python3 - <<'EOF'
+          import sys, yaml
+          bad = []
+          def objs(f): return [d for d in yaml.safe_load_all(open(f)) if d]
+          for d in objs("/tmp/r/secrets.yaml"):
+              if d["kind"] in ("PersistentVolumeClaim", "Secret"):
+                  if (d["metadata"].get("annotations") or {}).get("helm.sh/resource-policy") != "keep":
+                      bad.append(f"{d['kind']}/{d['metadata']['name']} has no keep policy")
+          for d in objs("/tmp/r/no-keep.yaml"):
+              if d["kind"] in ("PersistentVolumeClaim", "Secret"):
+                  if (d["metadata"].get("annotations") or {}).get("helm.sh/resource-policy") == "keep":
+                      bad.append(f"{d['kind']}/{d['metadata']['name']} kept the keep policy with keepOnUninstall=false")
+          sys.exit("\n".join(bad)) if bad else print("keep policy present and togglable")
+          EOF
+
+      - name: No real secrets committed
+        run: |
+          python3 - <<'EOF'
+          import glob, sys, yaml
+          bad = []
+          s = yaml.safe_load(open("values.yaml"))["secrets"]
+          for k, v in s.items():
+              if k != "create" and v:
+                  bad.append(f"values.yaml secrets.{k} must be empty")
+          for f in glob.glob("deploy/**/*.yaml", recursive=True):
+              v = yaml.safe_load(open(f)) or {}
+              extra = set((v.get("secrets") or {}).keys()) - {"create"}
+              if extra:
+                  bad.append(f"{f}: secret values do not belong in instance values: {sorted(extra)}")
+              if v.get("existingSecret") is None:
+                  bad.append(f"{f}: existingSecret must be set")
+          for f in ("/tmp/r/woowtech-odoo.yaml", "/tmp/r/cindytech.yaml"):
+              for d in yaml.safe_load_all(open(f)):
+                  if d and d["kind"] == "Secret":
+                      bad.append(f"{f} must not contain Secrets (secrets.create=false)")
+          for d in yaml.safe_load_all(open("examples/secrets.example.yaml")):
+              for k, v in ((d or {}).get("stringData") or {}).items():
+                  if "REPLACE_ME" not in str(v):
+                      bad.append(f"examples: {d['metadata']['name']}.{k} is not a placeholder")
+          sys.exit("\n".join(bad)) if bad else print("no secrets committed")
+          EOF
+
+      - name: Shell scripts parse
+        run: bash -n scripts/*.sh

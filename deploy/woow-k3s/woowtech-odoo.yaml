@@ -1,0 +1,126 @@
+# Instance values for the production n8n at https://n8n.woowtech.io
+# (Helm release `n8n`, namespace `woowtech-odoo`, adopted from a kubectl-applied
+# Deployment/Service/PVC that already exists there alongside Odoo).
+#
+# NO SECRETS HERE: with secrets.create=false (the chart default) the chart only
+# references the existing Secret `n8n-secrets`. It also has N8N_API_KEY and
+# MCP_AUTH_TOKEN keys left over from the in-cluster n8n-MCP sidecar; this chart
+# does not read or need them (n8n-MCP is now its own chart/release - see
+# WOOWTECH/woow_n8n_mcp_server).
+#
+# Reproduce the live objects (must render identically, see scripts/check-drift.sh):
+#   helm template n8n . -n woowtech-odoo -f deploy/woow-k3s/woowtech-odoo.yaml --skip-tests
+#
+# Take over the running kubectl-applied objects without restarting them:
+#   helm --kube-context woow-k3s upgrade --install n8n . -n woowtech-odoo \
+#     -f deploy/woow-k3s/woowtech-odoo.yaml --take-ownership
+#
+# SAFETY: this file intentionally does NOT set `namespace:`. Object placement
+# is controlled ENTIRELY by `-n`/`--namespace` on the command above. Never add
+# a `namespace:` key here (or to any other file under deploy/woow-k3s/) - the
+# `n8n.namespace` helper lets a values-file `namespace:` silently win over
+# `-n`, so a `-n <test-ns> -f deploy/woow-k3s/woowtech-odoo.yaml` rehearsal
+# would otherwise write to the REAL production namespace instead of the test
+# one. This file is already a fixed one-release-per-namespace mapping
+# (`fullnameOverride: n8n` + this exact pod spec only ever runs in
+# `woowtech-odoo`), so `-n` alone is sufficient and safe to vary for a
+# rehearsal in a test namespace.
+
+fullnameOverride: n8n
+
+existingSecret: n8n-secrets
+keepOnUninstall: true
+
+image:
+  repository: n8nio/n8n
+  tag: latest
+  pullPolicy: Always
+
+replicas: 1
+
+labels:
+  selector:
+    app: n8n
+  deployment: {}
+
+strategy:
+  type: RollingUpdate
+
+# Pod-template annotations. `kubectl rollout restart` stamps restartedAt into
+# the STORED pod template, so it is part of the live pod-template hash and must
+# be reproduced verbatim - otherwise a `--take-ownership` upgrade would strip it
+# and roll the Deployment. Value as of the last check against the live object;
+# refresh it (scripts/check-drift.sh) after any future `kubectl rollout restart`.
+podAnnotations:
+  kubectl.kubernetes.io/restartedAt: "2026-06-23T20:52:32+08:00"
+
+port: 5678
+
+# EXACT env order of the live Deployment - order is load-bearing (see
+# values.yaml). Do not reorder without a rehearsed takeover check.
+env:
+  - name: N8N_BASIC_AUTH_ACTIVE
+    value: "true"
+  - name: N8N_BASIC_AUTH_USER
+    value: woowtech@designsmart.com.tw
+  - name: N8N_BASIC_AUTH_PASSWORD
+    valueFromSecret: N8N_BASIC_AUTH_PASSWORD
+  - name: N8N_ENCRYPTION_KEY
+    valueFromSecret: N8N_ENCRYPTION_KEY
+  - name: GENERIC_TIMEZONE
+    value: Asia/Taipei
+  - name: N8N_HOST
+    value: "0.0.0.0"
+  - name: N8N_PORT
+    value: "5678"
+  - name: N8N_PROTOCOL
+    value: http
+  - name: NODE_ENV
+    value: production
+  - name: N8N_WEBHOOK_URL
+    value: https://n8n.woowtech.io/
+  - name: NODE_OPTIONS
+    value: --max-old-space-size=4096
+  - name: EXECUTIONS_TIMEOUT
+    value: "300"
+  - name: EXECUTIONS_TIMEOUT_MAX
+    value: "600"
+  - name: N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS
+    value: "false"
+
+resources:
+  requests:
+    cpu: 200m
+    memory: 512Mi
+  limits:
+    cpu: "3"
+    memory: 6Gi
+
+initContainer:
+  enabled: true
+  image: busybox:1.36
+  pullPolicy: IfNotPresent
+  # The live initContainer restates the timing/webhook env vars (harmless -
+  # the init container only runs `chown`); kept for an exact reproduction.
+  env:
+    - name: N8N_WEBHOOK_URL
+      value: https://n8n.woowtech.io/
+    - name: NODE_OPTIONS
+      value: --max-old-space-size=4096
+    - name: EXECUTIONS_TIMEOUT
+      value: "300"
+    - name: EXECUTIONS_TIMEOUT_MAX
+      value: "600"
+    - name: N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS
+      value: "false"
+
+persistence:
+  claimName: n8n-data
+  storageClassName: longhorn
+  size: 5Gi
+
+service:
+  name: n8n
+
+tests:
+  enabled: true

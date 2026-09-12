@@ -1,9 +1,17 @@
-# Patterns to ignore when building packages.
-*.tgz
+# Patterns to ignore when building Helm packages.
+.DS_Store
 .git/
 .gitignore
-*.swp
+.github/
+.helmignore
+*.tgz
 *.bak
 *.tmp
-*.orig
-.DS_Store
+*.swp
+.idea/
+.vscode/
+README*.md
+examples/
+scripts/
+# Per-cluster instance values are passed with -f, never packaged.
+/deploy/

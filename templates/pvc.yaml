@@ -1,36 +1,17 @@
----
-# PVC for n8n workflow data, credentials, and SQLite database
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: n8n-data
-  namespace: {{ .Values.namespace.name }}
+  name: {{ include "n8n.pvcName" . }}
+  namespace: {{ include "n8n.namespace" . }}
+  {{- with .Values.persistence.labels }}
   labels:
-    app: n8n
-    component: n8n
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- include "n8n.keepAnnotations" . | nindent 2 }}
 spec:
   accessModes:
-    - ReadWriteOnce
-  storageClassName: {{ .Values.n8n.persistence.storageClassName }}
+    - {{ .Values.persistence.accessMode }}
   resources:
     requests:
-      storage: {{ .Values.n8n.persistence.size }}
-{{- if .Values.mcp.enabled }}
----
-# PVC for n8n-mcp server logs
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: mcp-logs
-  namespace: {{ .Values.namespace.name }}
-  labels:
-    app: n8n
-    component: n8n-mcp
-spec:
-  accessModes:
-    - ReadWriteOnce
-  storageClassName: {{ .Values.mcp.persistence.storageClassName }}
-  resources:
-    requests:
-      storage: {{ .Values.mcp.persistence.size }}
-{{- end }}
+      storage: {{ .Values.persistence.size }}
+  storageClassName: {{ .Values.persistence.storageClassName }}

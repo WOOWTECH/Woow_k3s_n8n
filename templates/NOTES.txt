@@ -1,0 +1,6 @@
+n8n release "{{ .Release.Name }}" deployed to namespace {{ include "n8n.namespace" . }}.
+
+  kubectl --context <ctx> -n {{ include "n8n.namespace" . }} port-forward svc/{{ include "n8n.serviceName" . }} 5678:{{ .Values.port }}
+  helm test {{ .Release.Name }} -n {{ include "n8n.namespace" . }} --logs
+
+Data lives in PVC {{ include "n8n.pvcName" . }}{{ if .Values.keepOnUninstall }} (kept on `helm uninstall`){{ end }}.

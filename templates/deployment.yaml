@@ -1,0 +1,119 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "n8n.fullname" . }}
+  namespace: {{ include "n8n.namespace" . }}
+  {{- with .Values.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- with .Values.labels.deployment }}
+  labels:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  replicas: {{ .Values.replicas }}
+  selector:
+    matchLabels:
+      {{- include "n8n.selector" . | nindent 6 }}
+  strategy:
+    type: {{ .Values.strategy.type }}
+    {{- if and (eq .Values.strategy.type "RollingUpdate") .Values.strategy.rollingUpdate }}
+    rollingUpdate:
+      {{- toYaml .Values.strategy.rollingUpdate | nindent 6 }}
+    {{- end }}
+  template:
+    metadata:
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- toYaml .Values.labels.selector | nindent 8 }}
+    spec:
+      {{- if not .Values.automountServiceAccountToken }}
+      automountServiceAccountToken: false
+      {{- end }}
+      {{- if .Values.initContainer.enabled }}
+      initContainers:
+        - name: fix-permissions
+          image: {{ .Values.initContainer.image }}
+          imagePullPolicy: {{ .Values.initContainer.pullPolicy }}
+          command: ["sh", "-c", "chown -R 1000:1000 /home/node/.n8n"]
+          {{- with .Values.initContainer.env }}
+          env:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.initContainer.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.initContainer.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          volumeMounts:
+            - name: n8n-data
+              mountPath: /home/node/.n8n
+      {{- end }}
+      containers:
+        - name: n8n
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+            {{- range .Values.env }}
+            - name: {{ .name }}
+              {{- if hasKey . "value" }}
+              value: {{ .value | quote }}
+              {{- else if hasKey . "valueFromSecret" }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "n8n.secretName" $ }}
+                  key: {{ .valueFromSecret }}
+              {{- else if hasKey . "valueFrom" }}
+              valueFrom:
+                {{- toYaml .valueFrom | nindent 16 }}
+              {{- end }}
+            {{- end }}
+          ports:
+            - containerPort: {{ .Values.port }}
+              protocol: TCP
+              {{- if .Values.portName }}
+              name: {{ .Values.portName }}
+              {{- end }}
+          {{- with .Values.probes.liveness }}
+          livenessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.probes.readiness }}
+          readinessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.probes.startup }}
+          startupProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.containerSecurityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: n8n-data
+              mountPath: /home/node/.n8n
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if .Values.terminationGracePeriodSeconds }}
+      terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
+      {{- end }}
+      volumes:
+        - name: n8n-data
+          persistentVolumeClaim:
+            claimName: {{ include "n8n.pvcName" . }}

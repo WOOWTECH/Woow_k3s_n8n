@@ -1,96 +1,179 @@
 # Default values for the n8n chart.
-# Defaults reproduce the original Kustomize deployment 1:1
-# (namespace n8n, NodePorts 30678/30300, local-path storage, SQLite).
+#
+# There is no built-in "single-tenant" shape here: every live n8n on woow-k3s
+# was hand-applied with kubectl and each has its own object names, labels and
+# pod-spec details (probes, securityContext, nodeSelector, strategy...). The
+# defaults below describe a plain, reasonably-hardened fresh install; each
+# running instance's *exact* shape is restated in its own file under
+# deploy/woow-k3s/, which a fresh `helm template` must reproduce field for
+# field (see scripts/check-drift.sh).
+#
+# The n8n-MCP sidecar and its nginx proxy are NOT part of this chart. They are
+# their own chart/release per instance in WOOWTECH/woow_n8n_mcp_server.
 
-namespace:
-  # Create the target namespace as part of the release.
-  # Set to false if the namespace is managed elsewhere.
-  create: true
-  name: n8n
+# "" = the release namespace (-n). Only set this to install into a namespace
+# different from -n; the chart never creates a Namespace object either way.
+#
+# DANGER: never set this in a checked-in per-instance file under
+# deploy/woow-k3s/. A non-empty `namespace:` here silently WINS over `-n`
+# (see the n8n.namespace helper), so `-n <test-ns> -f deploy/woow-k3s/<real
+# instance>.yaml` would place objects in the real instance's namespace
+# instead of the test one. Every file under deploy/woow-k3s/ is already a
+# fixed one-release-per-namespace mapping, so `-n` alone is enough - leave
+# this "" there and vary only `-n`.
+namespace: ""
 
-n8n:
-  image:
-    repository: n8nio/n8n
-    tag: latest
-    # "Always" matches the original manifests' behaviour with the
-    # :latest tag (Kubernetes defaults to Always for :latest).
-    pullPolicy: Always
+nameOverride: ""
+fullnameOverride: ""
 
-  # Exposed to the container via a ConfigMap (envFrom).
-  config:
-    N8N_BASIC_AUTH_ACTIVE: "true"
-    N8N_BASIC_AUTH_USER: "admin"
-    N8N_HOST: "localhost"
-    N8N_PORT: "5678"
-    N8N_PROTOCOL: "http"
-    WEBHOOK_URL: "http://localhost:5678/"
-
-  service:
-    type: NodePort
-    port: 5678
-    # Only used when type is NodePort.
-    nodePort: 30678
-
-  persistence:
-    # PVC for n8n workflow data, credentials, and SQLite database.
-    storageClassName: local-path
-    size: 5Gi
-
-  resources:
-    requests:
-      cpu: 250m
-      memory: 256Mi
-    limits:
-      cpu: "1"
-      memory: 1Gi
-
-mcp:
-  # Deploy the n8n-MCP sidecar (AI-agent workflow management).
-  enabled: true
-
-  image:
-    repository: ghcr.io/czlonkowski/n8n-mcp
-    tag: latest
-    # "Always" matches the original manifests' behaviour with the
-    # :latest tag (Kubernetes defaults to Always for :latest).
-    pullPolicy: Always
-
-  # Exposed to the container via the shared ConfigMap.
-  config:
-    N8N_MODE: "true"
-    MCP_MODE: "http"
-    N8N_API_URL: "http://n8n:5678"
-
-  initContainer:
-    image: busybox:1.36
-
-  service:
-    type: NodePort
-    port: 3000
-    # Only used when type is NodePort.
-    nodePort: 30300
-
-  persistence:
-    # PVC for n8n-mcp server logs.
-    storageClassName: local-path
-    size: 1Gi
-
-  resources:
-    requests:
-      cpu: 100m
-      memory: 128Mi
-    limits:
-      cpu: 500m
-      memory: 512Mi
+# Existing Secret with keys N8N_BASIC_AUTH_PASSWORD and N8N_ENCRYPTION_KEY.
+# Required unless secrets.create=true. The chart only reads it - see
+# examples/secrets.example.yaml for every key a running instance may also
+# store there (N8N_API_KEY, MCP_AUTH_TOKEN, ...); this chart never uses those.
+existingSecret: ""
 
 secrets:
-  # -- n8n basic auth password (change before deploying)
-  basicAuthPassword: "changeme-n8n-password"
-  # -- n8n encryption key for credentials stored in the database
-  #    Generate with: openssl rand -hex 32
-  encryptionKey: "changeme-generate-with-openssl-rand-hex-32"
-  # -- n8n REST API key used by n8n-mcp to communicate with n8n
-  #    Generate in n8n UI: Settings > API > Create API Key
-  n8nApiKey: "changeme-n8n-api-key"
-  # -- Bearer token that protects the n8n-mcp HTTP endpoint
-  mcpAuthToken: "changeme-mcp-auth-token"
+  # Fresh-install/test convenience only: renders a Secret from the values
+  # below instead of requiring existingSecret. Never used for a live instance.
+  create: false
+  basicAuthPassword: ""
+  encryptionKey: ""
+
+# helm.sh/resource-policy: keep on the PVC and on the Secret this chart
+# creates (secrets.create=true only) so `helm uninstall` never deletes data.
+keepOnUninstall: true
+
+image:
+  repository: n8nio/n8n
+  tag: latest
+  # Matches Kubernetes' own default pull behaviour for a ":latest" tag.
+  pullPolicy: Always
+
+replicas: 1
+
+labels:
+  # Deployment selector AND pod-template labels. REQUIRED - has no default on
+  # purpose: Helm deep-merges map values, so a non-empty default here would
+  # silently union itself into a values file that means to replace it wholly
+  # (e.g. `{app: n8n}` leaking into `{app.kubernetes.io/name: cindytech}` and
+  # producing a *different* selector than either side intended). Fixed for
+  # the life of the release: changing it recreates the ReplicaSet and
+  # restarts every pod. e.g. `{app: n8n}`.
+  selector: {}
+  # Extra labels merged onto the Deployment's own metadata.labels only
+  # (not the selector or the pod template). {} renders no `labels:` key.
+  deployment: {}
+
+# Deployment-level annotations (metadata.annotations), e.g. for adoption notes.
+annotations: {}
+
+# Pod-template annotations (spec.template.metadata.annotations). {} renders no
+# `annotations:` key under `template:`.
+#
+# This is also how a live instance's kubectl.kubernetes.io/restartedAt is
+# reproduced. `kubectl rollout restart` stamps that annotation INTO the stored
+# pod template, so it is part of the running pod template's hash: a chart that
+# left it out would render a pod template that differs from the live one, and
+# a `--take-ownership` upgrade with three-way merge would remove it and roll
+# the Deployment. Each instance file under deploy/woow-k3s/ therefore carries
+# the exact timestamp its Deployment currently has. When an operator runs
+# `kubectl rollout restart` again, copy the new value back into that file
+# (scripts/check-drift.sh reports the drift).
+podAnnotations: {}
+
+strategy:
+  type: RollingUpdate
+  # {} lets the API server fill in its own default (25%/25%) - only set this
+  # when an instance needs a non-default value.
+  rollingUpdate: {}
+
+# true (default) omits the field, matching Kubernetes' own default.
+automountServiceAccountToken: true
+
+# Raw pass-through maps (rendered with `toYaml`, nothing added or defaulted).
+# {} omits the field so the API server's own default applies.
+nodeSelector: {}
+podSecurityContext: {}
+containerSecurityContext: {}
+
+# "" lets the API server default it (30s).
+terminationGracePeriodSeconds: ""
+
+port: 5678
+# "" omits the container/service port `name` field.
+portName: ""
+
+# Full, EXACTLY-ORDERED container env list. Order matters here: Kubernetes
+# hashes the pod template verbatim, so re-ordering this list on an already
+# running instance recreates its pod. Each entry is one of:
+#   {name, value}                  - literal value
+#   {name, valueFromSecret: KEY}   - secretKeyRef against the resolved Secret
+#                                    (existingSecret, or the one this chart
+#                                    creates when secrets.create=true)
+#   {name, valueFrom: {...}}       - any other raw valueFrom (fieldRef, etc.)
+env:
+  - name: N8N_BASIC_AUTH_ACTIVE
+    value: "true"
+  - name: N8N_BASIC_AUTH_USER
+    value: admin
+  - name: N8N_BASIC_AUTH_PASSWORD
+    valueFromSecret: N8N_BASIC_AUTH_PASSWORD
+  - name: N8N_ENCRYPTION_KEY
+    valueFromSecret: N8N_ENCRYPTION_KEY
+  - name: GENERIC_TIMEZONE
+    value: Asia/Taipei
+  - name: N8N_HOST
+    value: "0.0.0.0"
+  - name: N8N_PORT
+    value: "5678"
+  - name: N8N_PROTOCOL
+    value: http
+  - name: NODE_ENV
+    value: production
+  - name: N8N_WEBHOOK_URL
+    value: "http://localhost:5678/"
+  - name: NODE_OPTIONS
+    value: --max-old-space-size=2048
+
+# Raw k8s probe objects (httpGet/initialDelaySeconds/...). {} disables.
+probes:
+  liveness: {}
+  readiness: {}
+  startup: {}
+
+resources:
+  requests:
+    cpu: 200m
+    memory: 512Mi
+  limits:
+    cpu: "1"
+    memory: 2Gi
+
+initContainer:
+  # `chown -R 1000:1000` on the data volume before n8n starts.
+  enabled: true
+  image: busybox:1.36
+  pullPolicy: IfNotPresent
+  env: []
+  resources: {}
+  securityContext: {}
+
+persistence:
+  # "" = "<fullname>-data"
+  claimName: ""
+  # Test default (Longhorn "longhorn-delete" reclaims volumes on delete); a
+  # live instance overrides this to "longhorn" in its own deploy/ values.
+  storageClassName: longhorn-delete
+  size: 5Gi
+  accessMode: ReadWriteOnce
+  labels: {}
+
+service:
+  # "" = "<fullname>"
+  name: ""
+  type: ClusterIP
+  labels: {}
+
+tests:
+  # `helm test` smoke pod: GET /healthz. Read-only.
+  enabled: true
