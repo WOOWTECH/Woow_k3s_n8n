@@ -31,10 +31,25 @@ fullnameOverride: n8n
 existingSecret: n8n-secrets
 keepOnUninstall: true
 
+# PINNED 2026-09-13. This is the digest that was ALREADY RUNNING at pin time,
+# so applying it is a version no-op - the restart it costs changes nothing about
+# which n8n build serves users. It replaces ":latest" + pullPolicy: Always,
+# under which every restart silently pulled whatever ":latest" pointed at that
+# day. On 2026-09-13 the three builds in play were all different: this instance
+# ran 31375a4f7300, the other instance ran a second build, and Docker
+# Hub's ":latest" was a third one - so a restart was an unannounced upgrade.
+# IfNotPresent serves it from the node cache (pre-pulled onto every eligible
+# node), so a restart no longer depends on Docker Hub being reachable, which
+# matters because pulls from this cluster intermittently fail with
+# "net/http: TLS handshake timeout".
+#
+# To upgrade n8n deliberately: pick the new digest, pre-pull it onto every node
+# the pod may land on, update `digest` here, then `helm upgrade`.
 image:
   repository: n8nio/n8n
   tag: latest
-  pullPolicy: Always
+  digest: sha256:31375a4f730081a139bba2d379bf2efaa8e662cc9e131d12bb5e15859d4f0282
+  pullPolicy: IfNotPresent
 
 replicas: 1
 
@@ -43,8 +58,15 @@ labels:
     app: n8n
   deployment: {}
 
+# Recreate, NOT RollingUpdate. The live object was RollingUpdate
+# (maxSurge/maxUnavailable 25%), which with a single ReadWriteOnce Longhorn PVC
+# and no nodeSelector can deadlock: the surge pod waits for a volume the old
+# pod still holds, and the old pod is never torn down. Recreate stops the old
+# pod first, so the rollout always completes. Cost is a short gap instead of a
+# hung rollout; n8n is a single-replica stateful app that cannot run two copies
+# against one SQLite file anyway.
 strategy:
-  type: RollingUpdate
+  type: Recreate
 
 # Pod-template annotations. `kubectl rollout restart` stamps restartedAt into
 # the STORED pod template, so it is part of the live pod-template hash and must

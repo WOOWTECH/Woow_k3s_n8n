@@ -31,20 +31,42 @@ fullnameOverride: cindytech-n8n
 existingSecret: cindytech-n8n-secrets
 keepOnUninstall: true
 
+# PINNED 2026-09-13. This is the digest that was ALREADY RUNNING at pin time,
+# so applying it is a version no-op - the restart it costs changes nothing about
+# which n8n build serves users. It replaces ":latest" + pullPolicy: Always,
+# under which every restart silently pulled whatever ":latest" pointed at that
+# day. On 2026-09-13 the three builds in play were all different: this instance
+# ran 882b126a8ddd, the other instance ran a second build, and Docker
+# Hub's ":latest" was a third one - so a restart was an unannounced upgrade.
+# IfNotPresent serves it from the node cache (pre-pulled onto every eligible
+# node), so a restart no longer depends on Docker Hub being reachable, which
+# matters because pulls from this cluster intermittently fail with
+# "net/http: TLS handshake timeout".
+#
+# To upgrade n8n deliberately: pick the new digest, pre-pull it onto every node
+# the pod may land on, update `digest` here, then `helm upgrade`.
 image:
   repository: n8nio/n8n
   tag: latest
-  pullPolicy: Always
+  digest: sha256:882b126a8ddd0646e7d17ec47630e7704615e4647f3363471859fddc3f8946e2
+  pullPolicy: IfNotPresent
 
 replicas: 1
 
+# NOTE: these objects used to carry `app.kubernetes.io/managed-by: kubectl`.
+# They are Helm releases now, and Helm stamps `managed-by: Helm` onto anything
+# it adopts, so re-declaring the old value made the chart and Helm fight over
+# the same label on every upgrade. It is declared as `Helm` below rather than
+# just dropped, so the rendered manifest states the true value explicitly
+# instead of depending on Helm's implicit stamping. The label is metadata only
+# (not the selector, not the pod template), so it never restarts anything.
 labels:
   selector:
     app.kubernetes.io/component: n8n
     app.kubernetes.io/name: cindytech
   deployment:
     app.kubernetes.io/component: n8n
-    app.kubernetes.io/managed-by: kubectl
+    app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/name: cindytech
     app.kubernetes.io/part-of: cindytech
 
@@ -157,14 +179,14 @@ persistence:
   size: 5Gi
   labels:
     app.kubernetes.io/component: n8n
-    app.kubernetes.io/managed-by: kubectl
+    app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/part-of: cindytech
 
 service:
   name: cindytech-n8n-svc
   labels:
     app.kubernetes.io/component: n8n
-    app.kubernetes.io/managed-by: kubectl
+    app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/part-of: cindytech
 
 tests:
