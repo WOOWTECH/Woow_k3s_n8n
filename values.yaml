@@ -186,3 +186,11 @@ service:
 tests:
   # `helm test` smoke pod: GET /healthz. Read-only.
   enabled: true
+  # How long the smoke pod keeps retrying GET /healthz before it gives up. A
+  # brand-new pod cannot reach a Service ClusterIP for the first few seconds of
+  # its life while the route is programmed for it; measured in this cluster on
+  # 2026-09-13, a probe pod was refused on its first attempt and succeeded 10s
+  # later. A single-attempt smoke test therefore reports false failures right
+  # after a rollout. 120s is ~10x the observed delay. Keep `helm test --timeout`
+  # above this.
+  timeoutSeconds: 120
