@@ -1,0 +1,143 @@
+# Instance values for torchmedia's n8n (Helm release `torchmedia-n8n`,
+# namespace `torchmedia`), adopted from kubectl-applied objects named
+# torchmedia-n8n / torchmedia-n8n (Service) / torchmedia-n8n-data (PVC).
+#
+# This is the THIRD instance of this chart and the plainest of the three: no
+# probes, no securityContext, an unnamed container port and RollingUpdate
+# rather than Recreate. All of that is reproduced verbatim - the point of the
+# takeover is that nothing restarts.
+#
+# NO SECRETS HERE: the chart only references the existing Secret
+# `torchmedia-n8n-secrets`.
+#
+# SAFETY: never set `namespace:` here - placement is `-n` only.
+
+fullnameOverride: torchmedia-n8n
+
+existingSecret: torchmedia-n8n-secrets
+keepOnUninstall: true
+
+# NOT pinned to a digest, unlike the cindytech and woowtech-odoo instances.
+# Those were pinned deliberately, and pinning costs one restart - so it is left
+# alone here and listed as a follow-up. Until then every restart of this pod
+# silently pulls whatever ":latest" points at that day.
+image:
+  repository: n8nio/n8n
+  tag: latest
+  pullPolicy: Always
+
+replicas: 1
+
+# The live objects carry only `app: torchmedia-n8n`, and the Deployment itself
+# has no labels at all. The selector is IMMUTABLE, so it must match exactly.
+labels:
+  selector:
+    app: torchmedia-n8n
+  deployment: {}
+
+strategy:
+  type: RollingUpdate
+  rollingUpdate:
+    maxSurge: 25%
+    maxUnavailable: 25%
+
+# `kubectl rollout restart` stamps this into the stored pod template, so it is
+# part of the pod-template hash and dropping it would roll the Deployment.
+podAnnotations:
+  kubectl.kubernetes.io/restartedAt: "2026-06-24T17:18:44+08:00"
+
+# automountServiceAccountToken is deliberately NOT set: the live pod leaves the
+# field unset, and the chart only renders `false` when this is explicitly false.
+nodeSelector: {}
+podSecurityContext: {}
+containerSecurityContext: {}
+
+port: 5678
+# The live containerPort has no name.
+portName: ""
+
+# EXACT env order of the live Deployment - order is part of the pod template.
+# Note N8N_PROTOCOL is http here (the other two use https) and the basic-auth
+# user is an email address.
+env:
+  - name: N8N_HOST
+    value: "0.0.0.0"
+  - name: N8N_PORT
+    value: "5678"
+  - name: N8N_PROTOCOL
+    value: http
+  - name: N8N_WEBHOOK_URL
+    value: https://torchmedia-n8n.woowtech.io/
+  - name: N8N_BASIC_AUTH_ACTIVE
+    value: "true"
+  - name: N8N_BASIC_AUTH_USER
+    value: torch@torchmedia.com
+  - name: N8N_BASIC_AUTH_PASSWORD
+    valueFromSecret: N8N_BASIC_AUTH_PASSWORD
+  - name: N8N_ENCRYPTION_KEY
+    valueFromSecret: N8N_ENCRYPTION_KEY
+  - name: GENERIC_TIMEZONE
+    value: Asia/Taipei
+  - name: NODE_ENV
+    value: production
+  - name: N8N_PUBLIC_API_ENABLED
+    value: "true"
+  - name: NODE_OPTIONS
+    value: --max-old-space-size=4096
+  - name: EXECUTIONS_TIMEOUT
+    value: "300"
+  - name: EXECUTIONS_TIMEOUT_MAX
+    value: "600"
+
+# The live container declares none. Adding any would restart the pod.
+probes:
+  liveness: {}
+  readiness: {}
+  startup: {}
+
+resources:
+  requests:
+    cpu: 200m
+    memory: 512Mi
+  limits:
+    cpu: "3"
+    memory: 6Gi
+
+initContainer:
+  enabled: true
+  # This instance mounts the volume at /data in the init container and chowns
+  # that, unlike the other two which use n8n's own data path.
+  mountPath: /data
+  # Untagged `busybox`, not busybox:1.36 like the other two.
+  image: busybox
+  pullPolicy: Always
+  # `kubectl set env --all` added these to the init container too. It ignores
+  # them; removing them would restart the pod.
+  env:
+    - name: NODE_OPTIONS
+      value: --max-old-space-size=4096
+    - name: EXECUTIONS_TIMEOUT
+      value: "300"
+    - name: EXECUTIONS_TIMEOUT_MAX
+      value: "600"
+    - name: N8N_PROTOCOL
+      value: http
+  resources: {}
+  securityContext: {}
+
+persistence:
+  # The live pod calls the volume `data`; the other two instances call it
+  # `n8n-data`. Volume names are part of the pod template.
+  volumeName: data
+  claimName: torchmedia-n8n-data
+  storageClassName: longhorn
+  size: 5Gi
+  labels: {}
+
+service:
+  name: torchmedia-n8n
+  type: ClusterIP
+  labels: {}
+
+tests:
+  enabled: true

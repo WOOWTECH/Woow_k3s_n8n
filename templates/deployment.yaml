@@ -39,7 +39,11 @@ spec:
         - name: fix-permissions
           image: {{ .Values.initContainer.image }}
           imagePullPolicy: {{ .Values.initContainer.pullPolicy }}
-          command: ["sh", "-c", "chown -R 1000:1000 /home/node/.n8n"]
+          {{- /* The path the volume is mounted at inside the INIT container.
+          Two live instances mount it where n8n expects it; the third mounts it
+          at /data and chowns that. Either way the chown target must match the
+          mount, and both are part of the pod template. */}}
+          command: ["sh", "-c", "chown -R 1000:1000 {{ .Values.initContainer.mountPath }}"]
           {{- with .Values.initContainer.env }}
           env:
             {{- toYaml . | nindent 12 }}
@@ -48,13 +52,14 @@ spec:
           securityContext:
             {{- toYaml . | nindent 12 }}
           {{- end }}
-          {{- with .Values.initContainer.resources }}
+          {{- /* Always rendered, even when empty: two of the three live init
+          containers carry an explicit `resources: {}`, and omitting it is a
+          diff against them. */}}
           resources:
-            {{- toYaml . | nindent 12 }}
-          {{- end }}
+            {{- toYaml .Values.initContainer.resources | nindent 12 }}
           volumeMounts:
-            - name: n8n-data
-              mountPath: /home/node/.n8n
+            - name: {{ .Values.persistence.volumeName }}
+              mountPath: {{ .Values.initContainer.mountPath }}
       {{- end }}
       containers:
         - name: n8n
@@ -100,8 +105,8 @@ spec:
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
           volumeMounts:
-            - name: n8n-data
-              mountPath: /home/node/.n8n
+            - name: {{ .Values.persistence.volumeName }}
+              mountPath: {{ .Values.dataPath }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
@@ -114,6 +119,6 @@ spec:
       terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
       {{- end }}
       volumes:
-        - name: n8n-data
+        - name: {{ .Values.persistence.volumeName }}
           persistentVolumeClaim:
             claimName: {{ include "n8n.pvcName" . }}
