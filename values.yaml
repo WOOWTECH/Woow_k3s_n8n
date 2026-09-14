@@ -108,6 +108,11 @@ containerSecurityContext: {}
 # "" lets the API server default it (30s).
 terminationGracePeriodSeconds: ""
 
+# Where n8n's data volume is mounted in the MAIN container. n8n reads its
+# config from here, so this is not freely changeable - it is a value only
+# because the init container may mount the same volume elsewhere.
+dataPath: /home/node/.n8n
+
 port: 5678
 # "" omits the container/service port `name` field.
 portName: ""
@@ -161,6 +166,10 @@ resources:
 initContainer:
   # `chown -R 1000:1000` on the data volume before n8n starts.
   enabled: true
+  # Where the data volume is mounted inside the INIT container, and
+  # therefore what it chowns. Two live instances use the path n8n itself
+  # reads from; the third mounts it at /data. Part of the pod template.
+  mountPath: /home/node/.n8n
   image: busybox:1.36
   pullPolicy: IfNotPresent
   env: []
@@ -168,6 +177,9 @@ initContainer:
   securityContext: {}
 
 persistence:
+  # Name of the VOLUME inside the pod (not the claim). Part of the pod
+  # template: one live instance calls it `data`, the other two `n8n-data`.
+  volumeName: n8n-data
   # "" = "<fullname>-data"
   claimName: ""
   # Test default (Longhorn "longhorn-delete" reclaims volumes on delete); a
