@@ -17,14 +17,21 @@ fullnameOverride: torchmedia-n8n
 existingSecret: torchmedia-n8n-secrets
 keepOnUninstall: true
 
-# NOT pinned to a digest, unlike the cindytech and woowtech-odoo instances.
-# Those were pinned deliberately, and pinning costs one restart - so it is left
-# alone here and listed as a follow-up. Until then every restart of this pod
-# silently pulls whatever ":latest" points at that day.
+# PINNED 2026-09-15. This is the digest that was ALREADY RUNNING at pin time,
+# so applying it is a version no-op - and it is the same build cindytech runs.
+# It replaces ":latest" + pullPolicy: Always, under which every restart silently
+# pulled whatever ":latest" pointed at that day. IfNotPresent serves it from the
+# node cache (pre-pulled onto all four nodes before this was applied), so a
+# restart no longer depends on Docker Hub, which fails here intermittently with
+# "net/http: TLS handshake timeout".
+#
+# To upgrade deliberately: pick the new digest, pre-pull it onto every node the
+# pod may land on, update `digest` here, then `helm upgrade`.
 image:
   repository: n8nio/n8n
   tag: latest
-  pullPolicy: Always
+  digest: sha256:882b126a8ddd0646e7d17ec47630e7704615e4647f3363471859fddc3f8946e2
+  pullPolicy: IfNotPresent
 
 replicas: 1
 
@@ -35,11 +42,13 @@ labels:
     app: torchmedia-n8n
   deployment: {}
 
+# Recreate, NOT the RollingUpdate this instance was applied with. n8n holds a
+# single ReadWriteOnce Longhorn PVC and this pod has no nodeSelector, so a
+# rolling update surges a second pod that waits forever for a volume the old
+# pod still holds - the rollout then hangs and cannot self-heal. The other two
+# instances were fixed the same way; this one was missed.
 strategy:
-  type: RollingUpdate
-  rollingUpdate:
-    maxSurge: 25%
-    maxUnavailable: 25%
+  type: Recreate
 
 # `kubectl rollout restart` stamps this into the stored pod template, so it is
 # part of the pod-template hash and dropping it would roll the Deployment.
